@@ -207,7 +207,10 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 .news-card:hover{border-color:var(--verde2)}
 .news-badge{display:inline-block;font-size:10px;border-radius:20px;padding:2px 8px;font-weight:600;margin-bottom:0.35rem}
 .news-badge.resultado{background:rgba(0,155,107,0.2);color:#4ade80;border:1px solid rgba(0,155,107,0.4)}
-.match-card.done{opacity:0.75;border-left:3px solid var(--verde2)}
+.news-badge.aovivo{background:rgba(220,38,38,0.25);color:#f87171;border:1px solid rgba(220,38,38,0.5);animation:pulse-glow 1.5s ease-in-out infinite}
+.match-card.live{border-color:#dc2626;border-width:2px}
+.match-live-badge{display:inline-flex;align-items:center;gap:5px;background:rgba(220,38,38,0.2);border:1px solid rgba(220,38,38,0.5);border-radius:20px;padding:3px 10px;font-size:11px;color:#f87171;font-weight:700;margin-bottom:0.4rem;animation:pulse-glow 1.5s ease-in-out infinite}
+.match-live-dot{width:6px;height:6px;background:#f87171;border-radius:50%;animation:pulse-glow 1s ease-in-out infinite}
 .match-done-result{display:flex;align-items:center;justify-content:center;gap:10px;background:rgba(0,155,107,0.12);border:1px solid rgba(0,155,107,0.3);border-radius:8px;padding:7px 14px;font-size:18px;font-weight:900;color:#4ade80;letter-spacing:3px;margin-bottom:0.5rem}
 .match-done-label{font-size:10px;color:var(--verde2);font-weight:600;text-transform:uppercase;letter-spacing:1px;text-align:center;margin-bottom:4px}
 .news-badge.escalacao{background:rgba(0,61,166,0.3);color:#88aaff;border:1px solid rgba(0,61,166,0.5)}
@@ -852,6 +855,117 @@ function doRegister(){
   users[u]={password:btoa(p),avatar:avatarDataUrl,bets:{},champion:null,championLocked:false};
   saveUsers(users);currentUser={name:u,...users[u]};enterApp();
 }
+// ===== API FOOTBALL-DATA.ORG — TEMPO REAL =====
+const API_KEY='34de7dbe233f4664b562d417f3a97241';
+const API_BASE='https://api.football-data.org/v4';
+const TEAM_MAP={
+  'Brazil':{n:'Brasil',f:'🇧🇷'},'Mexico':{n:'México',f:'🇲🇽'},'South Africa':{n:'África do Sul',f:'🇿🇦'},
+  'South Korea':{n:'Coreia do Sul',f:'🇰🇷'},'Czech Republic':{n:'Rep. Tcheca',f:'🇨🇿'},
+  'Canada':{n:'Canadá',f:'🇨🇦'},'Bosnia and Herzegovina':{n:'Bósnia',f:'🇧🇦'},
+  'Qatar':{n:'Catar',f:'🇶🇦'},'Switzerland':{n:'Suíça',f:'🇨🇭'},
+  'Morocco':{n:'Marrocos',f:'🇲🇦'},'Haiti':{n:'Haiti',f:'🇭🇹'},'Scotland':{n:'Escócia',f:'🏴󠁧󠁢󠁳󠁣󠁴󠁿'},
+  'United States':{n:'EUA',f:'🇺🇸'},'Paraguay':{n:'Paraguai',f:'🇵🇾'},
+  'Australia':{n:'Austrália',f:'🇦🇺'},'Turkey':{n:'Turquia',f:'🇹🇷'},
+  'Germany':{n:'Alemanha',f:'🇩🇪'},'Curaçao':{n:'Curaçao',f:'🇨🇼'},
+  'Ivory Coast':{n:'Costa do Marfim',f:'🇨🇮'},'Ecuador':{n:'Equador',f:'🇪🇨'},
+  'Netherlands':{n:'Holanda',f:'🇳🇱'},'Japan':{n:'Japão',f:'🇯🇵'},
+  'Sweden':{n:'Suécia',f:'🇸🇪'},'Tunisia':{n:'Tunísia',f:'🇹🇳'},
+  'Belgium':{n:'Bélgica',f:'🇧🇪'},'Egypt':{n:'Egito',f:'🇪🇬'},
+  'Iran':{n:'Irã',f:'🇮🇷'},'New Zealand':{n:'Nova Zelândia',f:'🇳🇿'},
+  'Spain':{n:'Espanha',f:'🇪🇸'},'Cabo Verde':{n:'Cabo Verde',f:'🇨🇻'},
+  'Saudi Arabia':{n:'Arábia Saudita',f:'🇸🇦'},'Uruguay':{n:'Uruguai',f:'🇺🇾'},
+  'France':{n:'França',f:'🇫🇷'},'Senegal':{n:'Senegal',f:'🇸🇳'},
+  'Iraq':{n:'Iraque',f:'🇮🇶'},'Norway':{n:'Noruega',f:'🇳🇴'},
+  'Argentina':{n:'Argentina',f:'🇦🇷'},'Algeria':{n:'Argélia',f:'🇩🇿'},
+  'Austria':{n:'Áustria',f:'🇦🇹'},'Jordan':{n:'Jordânia',f:'🇯🇴'},
+  'Portugal':{n:'Portugal',f:'🇵🇹'},'DR Congo':{n:'RD Congo',f:'🇨🇩'},
+  'Uzbekistan':{n:'Uzbequistão',f:'🇺🇿'},'Colombia':{n:'Colômbia',f:'🇨🇴'},
+  'England':{n:'Inglaterra',f:'🏴󠁧󠁢󠁥󠁮󠁧󠁿'},'Croatia':{n:'Croácia',f:'🇭🇷'},
+  'Ghana':{n:'Gana',f:'🇬🇭'},'Panama':{n:'Panamá',f:'🇵🇦'},
+};
+function tn(a){return TEAM_MAP[a]?.n||a;}
+function tf(a){return TEAM_MAP[a]?.f||'🏳️';}
+
+let apiLastFetch=0;
+const API_CACHE_MS=60000; // atualiza a cada 60s
+
+async function fetchLiveData(){
+  const now=Date.now();
+  if(now-apiLastFetch<API_CACHE_MS&&apiLastFetch>0)return;
+  try{
+    showApiStatus('loading');
+    const res=await fetch(`${API_BASE}/competitions/WC/matches?season=2026`,{
+      headers:{'X-Auth-Token':API_KEY}
+    });
+    if(!res.ok)throw new Error('status '+res.status);
+    const data=await res.json();
+    apiLastFetch=now;
+    applyApiMatches(data.matches||[]);
+    showApiStatus('ok');
+  }catch(e){
+    console.warn('API indisponível:',e.message);
+    showApiStatus('error');
+  }
+}
+
+function applyApiMatches(apiMatches){
+  const newNews=[];
+  apiMatches.forEach(m=>{
+    const homeName=tn(m.homeTeam?.name||'');
+    const awayName=tn(m.awayTeam?.name||'');
+    const hf=tf(m.homeTeam?.name||'');
+    const af=tf(m.awayTeam?.name||'');
+    const status=m.status;
+    const hs=m.score?.fullTime?.home;
+    const as2=m.score?.fullTime?.away;
+    const md=m.matchday||1;
+    const grp=m.group?m.group.replace('GROUP_','Grupo '):'';
+    const dateStr=m.utcDate?new Date(m.utcDate).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',timeZone:'America/Sao_Paulo'}):'';
+    const timeStr=m.utcDate?new Date(m.utcDate).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Sao_Paulo'}):'';
+    // Atualiza dados estáticos
+    const sm=MATCHES.find(x=>x.home===homeName&&x.away===awayName);
+    if(sm){
+      if(status==='FINISHED'&&hs!=null&&as2!=null){
+        sm.done=true;sm.live=false;sm.result=`${hs}-${as2}`;
+        const rr=getResults();if(!rr[sm.id]){rr[sm.id]={sh:String(hs),sa:String(as2)};saveResults(rr);}
+      } else if(['IN_PROGRESS','LIVE','PAUSED'].includes(status)){
+        sm.live=true;sm.done=false;
+        sm.liveScore=`${m.score?.halfTime?.home??0}-${m.score?.halfTime?.away??0}`;
+      } else {sm.live=false;}
+    }
+    // Monta notícias com resultados reais
+    if(status==='FINISHED'&&hs!=null&&as2!=null){
+      newNews.push({badge:'resultado',bText:'Resultado ✅',
+        title:`${hf} ${homeName} ${hs}×${as2} ${awayName} ${af}`,
+        body:`Rodada ${md}${grp?' · '+grp:''}. Jogo encerrado em ${dateStr}.`,
+        time:dateStr+' · '+timeStr,sort:new Date(m.utcDate).getTime()});
+    } else if(['IN_PROGRESS','LIVE','PAUSED'].includes(status)){
+      newNews.push({badge:'aovivo',bText:'🔴 AO VIVO',
+        title:`${hf} ${homeName} vs ${awayName} ${af}`,
+        body:`Em andamento agora! ${grp}`,time:'Agora',sort:Date.now()});
+    }
+  });
+  if(newNews.length){
+    // Substitui notícias estáticas pelas da API, mantendo as de desfalques no final
+    const staticNews=NEWS.filter(n=>n.badge!=='resultado'&&n.badge!=='aovivo');
+    NEWS.splice(0,NEWS.length,...newNews.sort((a,b)=>b.sort-a.sort),...staticNews);
+  }
+  renderMatches();
+  renderNews();
+}
+
+function showApiStatus(s){
+  let el=document.getElementById('api-status-bar');
+  if(!el){
+    el=document.createElement('div');el.id='api-status-bar';
+    el.style.cssText='position:fixed;bottom:4rem;left:50%;transform:translateX(-50%);font-size:11px;padding:4px 14px;border-radius:20px;z-index:300;font-weight:600;transition:opacity 0.4s;pointer-events:none;white-space:nowrap';
+    document.body.appendChild(el);
+  }
+  if(s==='loading'){el.textContent='🔄 Buscando placares ao vivo...';el.style.cssText+=';background:rgba(0,60,166,0.92);color:#fff;opacity:1';}
+  else if(s==='ok'){el.textContent='✅ Placares atualizados';el.style.cssText+=';background:rgba(0,104,71,0.92);color:#fff;opacity:1';setTimeout(()=>{el.style.opacity='0';},2800);}
+  else{el.textContent='⚠️ Offline — dados do último acesso';el.style.cssText+=';background:rgba(120,60,0,0.92);color:#ffd700;opacity:1';setTimeout(()=>{el.style.opacity='0';},4000);}
+}
+
 function enterApp(){
   document.getElementById('auth-screen').classList.add('hidden');
   document.getElementById('app-screen').classList.remove('hidden');
@@ -861,6 +975,9 @@ function enterApp(){
   if(ud){localBets=ud.bets||{};currentUser.champion=ud.champion;currentUser.championLocked=ud.championLocked;}
   renderMatches();renderChampion();renderNews();
   startHeroCanvas();buildBubbles();
+  // 🔴 Busca dados ao vivo e agenda atualização a cada 60s
+  fetchLiveData();
+  setInterval(fetchLiveData,API_CACHE_MS);
 }
 function showUserMenu(){
   openModal('Conta','Logado como <strong>'+currentUser.name+'</strong>','Sair',function(){
@@ -1005,8 +1122,9 @@ function renderMatches(){
         </div>
       </div>`;
     }
-    return `<div class="match-card">
+    return `<div class="match-card ${m.live?'live':''}">
       <div class="match-meta"><span class="match-meta-lbl">Jogo ${m.id}</span><span class="match-phase-badge">${m.phase}</span></div>
+      ${m.live?`<div class="match-live-badge"><span class="match-live-dot"></span> AO VIVO</div>`:''}
       <div class="match-teams-row">
         <span class="match-team"><span class="match-team-flag">${m.hf}</span><span class="match-team-name">${m.home}</span></span>
         <span class="match-vs">vs</span>
