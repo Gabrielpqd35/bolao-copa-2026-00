@@ -894,8 +894,11 @@ async function fetchLiveData(){
   if(now-apiLastFetch<API_CACHE_MS&&apiLastFetch>0)return;
   try{
     showApiStatus('loading');
-    const res=await fetch(`${API_BASE}/competitions/WC/matches?season=2026`,{
-      headers:{'X-Auth-Token':API_KEY}
+    // corsproxy.io resolve o bloqueio de CORS para GitHub Pages (gratuito)
+    const targetUrl=`${API_BASE}/competitions/WC/matches?season=2026`;
+    const proxyUrl=`https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`;
+    const res=await fetch(proxyUrl,{
+      headers:{'X-Auth-Token':API_KEY,'x-requested-with':'XMLHttpRequest'}
     });
     if(!res.ok)throw new Error('status '+res.status);
     const data=await res.json();
